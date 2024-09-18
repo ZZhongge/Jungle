@@ -153,11 +153,16 @@ LogManifest::LogManifest(LogMgr* log_mgr, FileOps* _f_ops, FileOps* _f_l_ops)
     : fOps(_f_ops)
     , fLogOps(_f_l_ops)
     , mFile(nullptr)
+    , mBackupFile(nullptr)
     , lastFlushedLog(NOT_INITIALIZED)
     , lastSyncedLog(NOT_INITIALIZED)
     , maxLogFileNum(NOT_INITIALIZED)
     , cachedManifest(32768)
     , lenCachedManifest(0)
+    , reusedLogManifest(4096)
+    , lenReusedLogManifest(0)
+    , cacheValid(false)
+    , lastReusedLogFileNum(NOT_INITIALIZED)
     , fullBackupRequired(true)
     , logMgr(log_mgr)
     , myLog(nullptr)
@@ -173,6 +178,10 @@ LogManifest::~LogManifest() {
 
     if (mFile) {
         delete mFile;
+    }
+
+    if (mBackupFile) {
+        delete mBackupFile;
     }
     // NOTE: Skip `logFilesBySeq` as they share the actual memory.
     skiplist_node* cursor = skiplist_begin(&logFiles);
@@ -220,6 +229,7 @@ Status LogManifest::create(const std::string& path,
 
     dirPath = path;
     mFileName = filename;
+    mBackupFileName = filename + ".bak";
 
     // Create a new file.
     Status s;
@@ -242,6 +252,7 @@ Status LogManifest::load(const std::string& path,
 
     dirPath = path;
     mFileName = filename;
+    mBackupFileName = filename + ".bak";
     prefixNum = prefix_num;
 
     Status s;
@@ -513,8 +524,28 @@ Status LogManifest::storeInternal(bool call_fsync) {
                "num log files %zu",
                maxLogFileNum.load(), lastFlushedLog.load(),
                lastSyncedLog.load(), num_log_files);
+    
+    // cached part
+    bool exp = false;
+    if (cacheValid.compare_exchange_strong(exp, true)) {
+        reusedLogManifest.free();
+        reusedLogManifest.alloc(4096);
 
-    skiplist_node* cursor = skiplist_begin(&logFiles);
+        // generate cache
+        RwSerializer reused_ss(&reusedLogManifest);
+        lastReusedLogFileNum = fillReuseManifest(reused_ss, maxLogFileNum);
+        lenReusedLogManifest = reused_ss.pos();
+    }
+    ss.put(reusedLogManifest.data, lenReusedLogManifest);
+
+    skiplist_node* cursor;
+    if (lastReusedLogFileNum == NOT_INITIALIZED) {
+        cursor = skiplist_begin(&logFiles);
+    } else {
+        LogFileInfo query(lastReusedLogFileNum + 1);
+        cursor = skiplist_find_greater_or_equal(&logFiles, &query.snode);
+    }
+    
     while (cursor) {
         //   << Log info entry format >>
         // Log file number,         8 bytes
@@ -580,6 +611,11 @@ Status LogManifest::storeInternal(bool call_fsync) {
     _log_trace(myLog, "new buffer size %zu, cached %zu, first diff %zu",
                ss.pos(), lenCachedManifest, first_diff_pos);
 
+    if (lenCachedManifest > ss.pos()) {
+        // Should truncate tail.
+        fOps->ftruncate(mFile, ss.pos());
+    }
+
     while (ss.pos() > cachedManifest.size) {
         size_t new_size = cachedManifest.size * 2;
         cachedManifest.free();
@@ -589,9 +625,6 @@ Status LogManifest::storeInternal(bool call_fsync) {
 
     memcpy(cachedManifest.data, mani_buf.data, ss.pos());
     lenCachedManifest = ss.pos();
-
-    // Should truncate tail.
-    fOps->ftruncate(mFile, ss.pos());
 
     bool backup_done = false;
     if (call_fsync) {
@@ -607,8 +640,8 @@ Status LogManifest::storeInternal(bool call_fsync) {
             // using the latest data.
             // Same as above, tolerate backup failure.
             Status s_backup = BackupRestore::backup
-                              ( fOps, mFileName, mani_buf,
-                                ss.pos(),
+                              ( fOps, mBackupFile, mBackupFileName,
+                                mani_buf, ss.pos(),
                                 fullBackupRequired ? 0 : first_diff_pos,
                                 call_fsync );
             if (s_backup) {
@@ -622,6 +655,47 @@ Status LogManifest::storeInternal(bool call_fsync) {
     // entire date next time.
     fullBackupRequired = !backup_done;
     return s;
+}
+
+uint64_t LogManifest::fillReuseManifest(RwSerializer& ss, uint64_t last_file_num) {
+    skiplist_node* cursor = skiplist_begin(&logFiles);
+    uint64_t last_processed_file_num = NOT_INITIALIZED;
+    while (cursor) {
+        //   << Log info entry format >>
+        // Log file number,         8 bytes
+        // Min seq number,          8 bytes
+        // Last flushed seq number, 8 bytes
+        // Last synced seq number,  8 bytes
+        LogFileInfo* info = _get_entry(cursor, LogFileInfo, snode);
+        LogFile* l_file = info->file;
+
+        // WARNING: We should grab `info` due to below
+        //          seq number retrievals. Otherwise, there can
+        //          be a possibility of heap-use-after-free if
+        //          this file is being evicted by the reclaimer.
+        info->grab(false);
+        if (info->logFileNum == last_file_num) {
+            info->done();
+            skiplist_release_node(&info->snode);
+            break;
+        }
+
+        ss.putU64(info->logFileNum);
+        ss.putU64(l_file->getMinSeqNum());
+        ss.putU64(l_file->getFlushedSeqNum());
+        ss.putU64(l_file->getSyncedSeqNum());
+        last_processed_file_num = info->logFileNum;
+        _log_trace(myLog,
+                   "log %ld, min seq %ld, last flush %ld, last sync %ld",
+                   info->logFileNum, l_file->getMinSeqNum(),
+                   l_file->getFlushedSeqNum(), l_file->getSyncedSeqNum());
+        info->done();
+
+        cursor = skiplist_next(&logFiles, cursor);
+        skiplist_release_node(&info->snode);
+    }
+    if (cursor) skiplist_release_node(cursor);
+    return last_processed_file_num;
 }
 
 Status LogManifest::issueLogFileNumber(uint64_t& new_log_file_number) {

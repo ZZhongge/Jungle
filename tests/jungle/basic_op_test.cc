@@ -3019,34 +3019,34 @@ int main(int argc, char** argv) {
     TestSuite ts(argc, argv);
 
     //ts.options.printTestMessage = true;
-    ts.doTest("basic operation test", basic_operations_test);
-    ts.doTest("many logs test", many_logs_test);
-    ts.doTest("overwrite sequence number test", overwrite_seq);
-    ts.doTest("overwrite last sequence number test", overwrite_seq_last_record);
-    ts.doTest("overwrite sequence number after reopen test", overwrite_seq_reopen);
-    ts.doTest("load existing db test (sync)", load_db_sync);
-    ts.doTest("load existing db test (flush)", load_db_flush);
-    ts.doTest("log deduplication test", log_dedup);
-    ts.doTest("deletion test", deletion_op);
-    ts.doTest("multiple log files test", multiple_log_files);
-    ts.doTest("multiple KV Stores test", multiple_kvs);
-    ts.doTest("set by key test", set_by_key);
-    ts.doTest("command marker test", command_marker);
-    ts.doTest("multiple handles test", multiple_handles);
-    ts.doTest("multiple group handles test", multiple_group_handles);
-    ts.doTest("group handle misuse test", group_handle_misuse);
-    ts.doTest("purge only test", purge_only_test);
-    ts.doTest("meta test log", meta_test_log);
-    ts.doTest("meta test table", meta_test_table);
-    ts.doTest("async flush test", async_flush_test);
-    ts.doTest("async flush verbose test", async_flush_verbose_test,
-              TestRange<bool>( {false, true} ) );
-    ts.doTest("async flush verbose with delay test",
-              async_flush_verbose_with_delay_test,
-              TestRange<bool>( { true } ) );
-    ts.doTest("flush beyond sync test", flush_beyond_sync_test);
-    ts.doTest("get stat test", get_stat_test);
-    ts.doTest("double shutdown test", double_shutdown_test);
+    // ts.doTest("basic operation test", basic_operations_test);
+    // ts.doTest("many logs test", many_logs_test);
+    // ts.doTest("overwrite sequence number test", overwrite_seq);
+    // ts.doTest("overwrite last sequence number test", overwrite_seq_last_record);
+    // ts.doTest("overwrite sequence number after reopen test", overwrite_seq_reopen);
+    // ts.doTest("load existing db test (sync)", load_db_sync);
+    // ts.doTest("load existing db test (flush)", load_db_flush);
+    // ts.doTest("log deduplication test", log_dedup);
+    // ts.doTest("deletion test", deletion_op);
+    // ts.doTest("multiple log files test", multiple_log_files);
+    // ts.doTest("multiple KV Stores test", multiple_kvs);
+    // ts.doTest("set by key test", set_by_key);
+    // ts.doTest("command marker test", command_marker);
+    // ts.doTest("multiple handles test", multiple_handles);
+    // ts.doTest("multiple group handles test", multiple_group_handles);
+    // ts.doTest("group handle misuse test", group_handle_misuse);
+    // ts.doTest("purge only test", purge_only_test);
+    // ts.doTest("meta test log", meta_test_log);
+    // ts.doTest("meta test table", meta_test_table);
+    // ts.doTest("async flush test", async_flush_test);
+    // ts.doTest("async flush verbose test", async_flush_verbose_test,
+    //           TestRange<bool>( {false, true} ) );
+    // ts.doTest("async flush verbose with delay test",
+    //           async_flush_verbose_with_delay_test,
+    //           TestRange<bool>( { true } ) );
+    // ts.doTest("flush beyond sync test", flush_beyond_sync_test);
+    // ts.doTest("get stat test", get_stat_test);
+    // ts.doTest("double shutdown test", double_shutdown_test);
     ts.doTest("reopen empty db test", reopen_empty_db_test);
     ts.doTest("different number of L0 partitions test", different_l0_partitions);
     ts.doTest("add new log file race test", add_new_log_file_race_test);

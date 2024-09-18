@@ -335,11 +335,15 @@ public:
 private:
     Status storeInternal(bool call_fsync);
 
+    uint64_t fillReuseManifest(RwSerializer& ss, uint64_t last_file_num);
+
     FileOps* fOps;
     FileOps* fLogOps;
     FileHandle* mFile;
+    FileHandle* mBackupFile;
     std::string dirPath;
     std::string mFileName;
+    std::string mBackupFileName;
     uint64_t prefixNum;
     std::atomic<uint64_t> lastFlushedLog;
     std::atomic<uint64_t> lastSyncedLog;
@@ -366,6 +370,25 @@ private:
      * reserves more memory.
      */
     size_t lenCachedManifest;
+
+    /**
+     * Buffer for caching the last written manifest file data.
+     */
+    SizedBuf reusedLogManifest;
+
+    /**
+     * Actual length of data in `cachedManifest`, as `cachedManifest`
+     * reserves more memory.
+     */
+    size_t lenReusedLogManifest;
+
+    /**
+     * Actual length of data in `cachedManifest`, as `cachedManifest`
+     * reserves more memory.
+     */
+    std::atomic<bool> cacheValid;
+
+    uint64_t lastReusedLogFileNum;
 
     /**
      * Only one thread is allowed to write the manifest file.
